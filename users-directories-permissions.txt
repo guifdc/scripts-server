@@ -1,0 +1,69 @@
+#!/bin/bash
+
+echo " "
+echo "Code infrastructure: script for creation of users, directories and permissions."
+
+echo " "
+echo "Going to the / directory."
+cd /
+
+echo " "
+echo "Creating folders."
+mkdir -v publico adm ven sec
+
+echo " "
+echo "Creating user groups."
+groupadd GRP_ADM
+groupadd GRP_VEN
+groupadd GRP_SEC
+
+echo " "
+echo "Creating the users."
+useradd carlos -c "carlos" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_ADM
+passwd carlos -e
+
+useradd maria -c "maria" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_ADM
+passwd maria -e
+
+useradd joao -c "joao" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_ADM
+passwd joao -e
+
+useradd debora -c "debora" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_VEN
+passwd debora -e
+
+useradd sebastiana -c "sebastiana" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_VEN
+passwd sebastiana -e
+
+useradd roberto -c "roberto" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_VEN
+passwd roberto -e
+
+useradd josefina -c "josefina" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_SEC
+passwd josefina -e
+
+useradd amanda -c "amanda" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_SEC
+passwd amanda -e
+
+useradd rogerio -c "rogerio" -s /bin/bash -m -p $(openssl passwd abcd) -G GRP_SEC
+passwd rogerio -e
+
+echo " "
+echo "The default password for all users is \"abcd\""
+echo "In the first logon, users must set up their new passwords!"
+echo "..."
+
+echo " "
+echo "Setting user root as the owner of the created folders and each group to each folder."
+chown -v -R root:root publico 
+chown -v -R root:GRP_ADM adm
+chown -v -R root:GRP_VEN ven
+chown -v -R root:GRP_SEC sec
+
+echo " "
+echo "Setting the folder permissions for each group belonged."
+chmod -v -R 777 publico
+chmod -v -R 770 adm
+chmod -v -R 770 ven
+chmod -v -R 770 sec
+
+echo " "
+echo "All Done!" 
