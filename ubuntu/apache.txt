@@ -1,0 +1,37 @@
+#!/bin/bash
+
+echo " "
+echo "Setting up the Apache web server and an example site."
+
+echo " "
+echo "Going to the /tmp directory."
+cd /tmp
+pwd
+
+echo " "
+echo "Updating the server list, but not upgrading."
+apt update
+
+echo " "
+echo "Installing the Apache and unzip."
+apt install apache2 unzip -y
+
+echo " "
+echo "Downloading the example site."
+wget https://github.com/denilsonbonatti/linux-site-dio/archive/refs/heads/main.zip
+
+echo " "
+echo "Unziping the file main.zip"
+unzip main.zip
+
+echo " "
+echo "Renaming and moving the site folder to the apache defaul folder in /var/www/html/"
+mv linux-site-dio-main/ dbonatti/
+mv dbonatti/ /var/www/html/
+
+echo " "
+echo "Enabling Apache2 service on startup."
+systemctl enable apache2
+
+echo " "
+echo "All done! The access to the example site is made by the server-ip/dbonatti"
