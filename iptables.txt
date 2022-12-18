@@ -1,0 +1,113 @@
+#!/bin/bash
+
+echo "Carregando configurações de firewall."
+
+# Os comandos echo são utilizados para imprimir na linha de comando ou terminal do linux o texto entre aspas. É útil para localizar problemas durante a execução de um script.
+
+# modprobe ipt_conntrack_ftp ### podera tentar utilizar o comando anterior. Mas neste caso houve erro. Então foi utilizado o comando a seguir. Ambos os comandos servem para permitir que as conexões subsequentes de ftp possam ser possíveis através do carregamento de um modulo específico no kernel.
+
+modprobe ip_nat_ftp
+echo "1"
+
+# echo '1' > /proc/sys/net/ipv4/ip_forward ### o comando anterior tem a mesma função que o comando a seguir, mas ele poderá apresentar um erro de permissão, como no caso deste trabalho. Já o comando a seguir foi executado sem problemas. O comando sysctl é utilizado para alterar parametros do kernel em tempo de execução.
+
+sysctl -w net.ipv4.ip_forward=1
+
+echo "2"
+
+# O conjunto de regras até o echo 7 servem para definir as ações padrões das chains da tabela filter. O pacote que não combinar com nenhuma das regras estabelecidas nas chains será descartado.
+
+iptables -F -t filter
+echo "3"
+iptables -F -t nat
+echo "4"
+iptables -P INPUT DROP -filter
+echo "5"
+iptables -P OUTPUT DROP -filter
+echo "6"
+iptables -P FORWARD DROP -filter
+echo "7"
+
+# Os comandos com a propriedade NEW reference a novas conexões e ESTABLISH e RELATED reference a conexões já estabelecidas e relacionadas.
+
+iptables -A OUTPUT -j ACCEPT -t filter -m state --state NEW,ESTABLISHED,RELATED
+echo "8"
+iptables -A INPUT -p udp -j ACCEPT -t filter
+echo "9"
+iptables -A INPUT -i eth2 -s 10.0.0.0/24 -p tcp --dport 22 -m state --state NEW,ESTABLISHED,RELATED -j ACCEPT
+echo "10"
+iptables -A INPUT -p tcp --match multiport --sports 80,443,20,21,8080,22 -m state --state ESTABLISHED,RELATED -j ACCEPT
+echo "11"
+iptables -A INPUT -p icmp --icmp-type 0 -m state --state ESTABLISH -j ACCEPT -t filter
+echo "12"
+
+# O conjunto de regras até o echo 14 permitem o tráfego de entrada de origem do lado WAN (ou da internet) "alcançar" os servidores da DMZ através da tradução NAT de endereços antes do roteamento para a rede DMZ. Só são permitidas requisições para os serviços de navegação de páginas e e-mail.
+
+iptables -A PREROUTING -t nat -d 192.168.0.3 -j DNAT --to-destination 10.1.0.11 -p tcp --match multiport --dports 80,443,20,21,8080 -i eth0
+echo "13"
+iptables -A PREROUTING -t nat -d 192.168.0.3 -j DNAT --to-destination 10.1.0.12 -p tcp --match multiport --dports 995,25,587,2525,993 -i eth0
+echo "14"
+
+# O conjunto de regras até o echo 17 permitem o encaminhamento ou atravessamento de pacotes traduzidos do lado WAN através do firewall para DMZ servidores e as repostas de volta para a WAN. É necessário verificar que foi feito o forward ou atravessamento originado da interface eth0 para a eth1 e vice-versa pois o trafego que entra são as requisições e a saida são as respostas. A mesma lógica vale para as requisições que entram na DMZ bem como para as requisições que saem da rede interna. O comando --match iprange poupa a necessidade de um par de linhas adicionais pois no pre-roteamento ja foi definido o IP de destino do pacote. Logo quando o pacote chegar com o ip 10.1.0.11 ou 10.1.0.12 a regra verificará que o pacote atende ao range ou faixa de ips definidas no comando e permite o pacote seguir até o servidor do serviço solicitado.
+
+echo "15"
+
+iptables -A FORWARD -i eth0 -o eth1 -p tcp --match multiport --dports 80,443,20,21,8080,995,25,587,2525,993 -m state --state NEW,ESTABLISH,RELATED -j ACCEPT -t filter --match iprange --dst-range 10.1.0.11-10.1.0.12
+echo "16"
+
+iptables -A FORWARD -i eth1 -o eth0 -p tcp --match multiport --sports 80,443,20,21,8080,995,25,587,2525,993 -m state --state ESTABLISH,RELATED -j ACCEPT -t filter --match iprange --src-range 10.1.0.11-10.1.0.12
+echo "17"
+
+# O conjunto de regras até echo 20 permitem o tráfego de saída da Rede Interna (ou grupo doméstico) "alcançar" os serviços mais comuns nos servidores WAN através da tradução NAT de endereços, mascarando o trafego de saída com o IP da interface eth0. Detalhe para a permissão de sáida dos protocolos UDP para resolução de nomes para endereços e ICMP para requisições ping.
+
+# Para todo o trafego de saída, seja da DMZ ou a rede interna, foi necessário permitir claramente a saída e retorno do protocolo UDP na porta 53 Para resolver nomes. Independente de se estar na rede interna ou DMZ só foi possivel acessar ou ping para endereços de sites através de seu número IP, ou seja, um endereço conhecido. Com o UDP permitido, é possível resolver os nomes.
+
+iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -p tcp --match multiport --dports 53,22,80,443,20,21,8080,110,995,25,587,2525,993,143 -o eth0 -j MASQUERADE
+echo "18"
+iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -p udp --dport 53 -o eth0 -j MASQUERADE
+echo "19"
+iptables -t nat -A POSTROUTING -s 10.0.0.0/24 -p icmp -o eth0 -j MASQUERADE
+echo "20"
+
+# O conjunto de regras até echo 26 permitem fazer o encaminhamento de pacotes traduzidos da Rede Interna através do firewall conforme lógica explicada antes do echo 15. As regras também permitem atravessar ping da rede Internar para a WAN e a volta da resposta (pong) além das solicitações de resolução de nomes. Lembrando mais uma vez que o par para os protocolos permitem a saída e a entrada através das interfaces de rede. Ex: -i eth0 -o eth2 e -i eth2 -o eth0.
+
+iptables -A FORWARD -i eth0 -o eth2 -d 10.0.0.0/24 -p tcp --match multiport --sports 22,80,443,20,21,8080,995,25,587,2525,993 -m state --state ESTABLISH,RELATED -j ACCEPT -t filter
+echo "21"
+iptables -A FORWARD -i eth2 -o eth0 -s 10.0.0.0/24 -p tcp --match multiport --dports 22,80,443,20,21,8080,995,25,587,2525,993 -m state --state NEW,ESTABLISH,RELATED -j ACCEPT -t filter
+echo "22"
+iptables -A FORWARD -i eth0 -o eth2 -d 10.0.0.0/24 -p udp --sport 53 -m state --state ESTABLISH,RELATED -j ACCEPT -t filter
+echo "23"
+iptables -A FORWARD -i eth2 -o eth0 -s 10.0.0.0/24 -p udp --dport 53 -m state --state NEW,ESTABLISH,RELATED -j ACCEPT -t filter
+echo "24"
+iptables -A FORWARD -i eth0 -o eth2 -d 10.0.0.0/24 -p icmp --icmp-type 0 -m state --state ESTABLISH -j ACCEPT -t filter
+echo "25"
+iptables -A FORWARD -i eth2 -o eth0 -s 10.0.0.0/24 -p icmp --icmp-type 8 -m state --state NEW,ESTABLISH -j ACCEPT -t filter
+echo "26"
+
+# O conjunto de regras até echo 32 permitem que os servidores na DMZ possam acessar a internet abrindo conexões para os serviços de email e navegação de páginas.
+
+iptables -t nat -A POSTROUTING -s 10.1.0.0/24 -p tcp --match multiport --dports 53,80,443,20,21,8080,25,2525 -o eth0 -j MASQUERADE
+echo "27"
+iptables -t nat -A POSTROUTING -s 10.1.0.0/24 -p udp --dport 53 -o eth0 -j MASQUERADE
+echo "28"
+iptables -A FORWARD -i eth0 -o eth1 -d 10.1.0.0/24 -p tcp --match multiport --sports 53,80,443,20,21,8080,25,2525 -m state --state ESTABLISH,RELATED -j ACCEPT -t filter
+echo "29"
+iptables -A FORWARD -i eth1 -o eth0 -s 10.1.0.0/24 -p tcp --match multiport --dports 53,80,443,20,21,8080,25,2525 -m state --state NEW,ESTABLISH,RELATED -j ACCEPT -t filter
+echo "30"
+iptables -A FORWARD -i eth0 -o eth1 -d 10.1.0.0/24 -p udp --sport 53 -m state --state ESTABLISH,RELATED -j ACCEPT -t filter
+echo "31"
+iptables -A FORWARD -i eth1 -o eth0 -s 10.1.0.0/24 -p udp --dport 53 -m state --state NEW,ESTABLISH,RELATED -j ACCEPT -t filter
+echo "32"
+
+# O conjunto de regras até echo 36 permitem que a rede interna faça conexões SSH para os servidores da DMZ e conexões do MySQL para o servidor web. Mais uma vez, não é necessário definir um par de regras para 10.1.0.11 e 10.1.0.12. Conforme no primeiro exemplo, ao ser verificado o endereço de destino para 10.1.0.11 ou 10.1.0.12 e a porta 22, o pacote e direcionado para a eth1 e segue para o servidor definido no pacote.
+
+iptables -A FORWARD -i eth2 -o eth1 -s 10.0.0.0/24 --match iprange --dst-range 10.1.0.11-10.1.0.12 -p tcp --dport 22 -m state --state NEW,ESTABLISH,RELATED -j ACCEPT -t filter
+echo "33"
+iptables -A FORWARD -i eth1 -o eth2 -d 10.0.0.0/24 --match iprange --src-range 10.1.0.11-10.1.0.12 -p tcp --sport 22 -m state --state ESTABLISH,RELATED -j ACCEPT -t filter
+echo "34"
+iptables -A FORWARD -i eth2 -o eth1 -s 10.0.0.0/24 -d 10.1.0.11 -p tcp --dport 3306 -m state --state NEW,ESTABLISH,RELATED -j ACCEPT -t filter
+echo "35"
+iptables -A FORWARD -i eth1 -o eth2 -d 10.0.0.0/24 -s 10.1.0.11 -p tcp --sport 3306 -m state --state ESTABLISH,RELATED -j ACCEPT -t filter
+echo "36"
+
+echo "Concluído."
